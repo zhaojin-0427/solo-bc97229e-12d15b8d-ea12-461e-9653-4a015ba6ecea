@@ -76,3 +76,75 @@ class AttributionResult(BaseModel):
 
 class SegmentsQueryRequest(BaseModel):
     employee_id: str | None = Field(default=None, description="可选，按员工过滤")
+
+
+# ---------------- 历史压缩 ----------------
+
+
+class CompactionRequest(BaseModel):
+    """历史压缩请求：指定现存修订 B 作为最早保留口径。"""
+
+    retain_from_revision: int = Field(
+        ...,
+        ge=1,
+        description="最早保留修订号 B：必须是现存修订；早于 B 的有效归属折叠为持久基线",
+        examples=[3],
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "retain_from_revision": 3,
+                }
+            ]
+        }
+    }
+
+
+class CompactionRunOut(BaseModel):
+    """一次压缩的结果（重复请求返回同一条，不重复改变数据）。"""
+
+    run_id: int
+    request_key: str
+    retention_boundary: int = Field(..., description="压缩后生效的保留边界 B")
+    prior_boundary: int | None = Field(..., description="压缩前的保留边界；首次压缩为 null")
+    baseline_inserted: int = Field(..., description="本次写入的持久基线区间行数")
+    segments_deleted: int = Field(..., description="本次实际删除的旧修订原始区间行数")
+    revisions_deleted: int = Field(..., description="本次实际删除的旧修订行数")
+    new_revisions_kept: int = Field(
+        ..., description="压缩计算期间继续补录、提交时一并保留的修订数量（>= B）"
+    )
+    idempotent_replay: bool = Field(..., description="是否为同一 B 的重复请求（未再改动数据）")
+    created_at: str
+
+
+class CompactionBoundaryOut(BaseModel):
+    """保留边界与累计删除行数查询。"""
+
+    retention_boundary: int | None = Field(
+        ..., description="当前最早保留修订号；尚未压缩过为 null（所有修订均可查）"
+    )
+    compacted: bool
+    total_runs: int = Field(..., description="累计压缩次数（重复请求不计数）")
+    total_baseline_segments: int = Field(..., description="当前持久基线区间行数")
+    total_segments_deleted: int = Field(..., description="累计删除的旧修订原始区间行数")
+    total_revisions_deleted: int = Field(..., description="累计删除的旧修订行数")
+    latest_run_id: int | None
+    updated_at: str | None
+
+
+class BaselineSegmentOut(BaseModel):
+    """持久基线中的一条折叠区间（含折叠前命中的修订号，可审计）。"""
+
+    employee_id: str
+    cost_center: str
+    effective_from: date
+    effective_to: date
+    source_revision_id: int = Field(
+        ..., description="该基线区间折叠前真正命中的修订号；同员工相邻同口径段已合并"
+    )
+
+
+class BaselineQueryRequest(BaseModel):
+    employee_id: str | None = Field(default=None, description="可选，按员工过滤")
